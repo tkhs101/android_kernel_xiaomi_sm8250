@@ -181,7 +181,7 @@
 	"chan_band_weightage", \
 	0, \
 	100, \
-	2, \
+	20, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Channel Band Weightage")
 
@@ -558,7 +558,7 @@
 	"rssi_pref_5g_rssi_thresh", \
 	0, \
 	96, \
-	76, \
+	72, \
 	CFG_VALUE_OR_DEFAULT, \
 	"RSSI Pref 5G Threshold")
 
@@ -659,9 +659,9 @@
  */
 #define CFG_SCORING_BAND_WEIGHT_PER_IDX CFG_INI_UINT( \
 	"band_weight_per_index", \
-	0x00000000, \
+	0, \
 	0x64646464, \
-	0x0000644B, \
+	0x00006414, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Band weight per index")
 

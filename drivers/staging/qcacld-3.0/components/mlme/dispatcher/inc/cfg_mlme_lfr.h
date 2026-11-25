@@ -455,7 +455,7 @@
 	"roam_bg_scan_bad_rssi_thresh", \
 	-96, \
 	0, \
-	-76, \
+	-68, \
 	CFG_VALUE_OR_DEFAULT, \
 	"RSSI threshold for background roam")
 
@@ -526,7 +526,7 @@
 	"roam_bad_rssi_thresh_offset_2g", \
 	0, \
 	86, \
-	40, \
+	10, \
 	CFG_VALUE_OR_DEFAULT, \
 	"RSSI threshold offset for 2G to 5G roam")
 

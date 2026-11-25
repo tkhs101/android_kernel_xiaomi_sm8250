@@ -817,9 +817,9 @@ int scm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 		 * score. if RSSI is greater tha 5g rssi threshold or fall in
 		 * same bucket else give weigtage to 2.4 GH.
 		 */
-		if ((entry->rssi_raw > rssi_pref_5g_rssi_thresh) &&
-		    !same_bucket) {
-			if (WLAN_REG_IS_5GHZ_CH_FREQ(entry->channel.chan_freq))
+		if (WLAN_REG_IS_5GHZ_CH_FREQ(entry->channel.chan_freq)) {
+			if (entry->rssi_raw >= -72 ||
+			    ((entry->rssi_raw > rssi_pref_5g_rssi_thresh) && !same_bucket))
 				band_score =
 					weight_config->chan_band_weightage *
 					    WLAN_GET_SCORE_PERCENTAGE(

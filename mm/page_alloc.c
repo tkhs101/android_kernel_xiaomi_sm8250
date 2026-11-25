@@ -7959,8 +7959,8 @@ int __meminit init_per_zone_wmark_min(void)
 
 	if (new_min_free_kbytes > user_min_free_kbytes) {
 		min_free_kbytes = new_min_free_kbytes;
-		if (min_free_kbytes < 32768)
-			min_free_kbytes = 32768;
+		if (min_free_kbytes < 49152)
+			min_free_kbytes = 49152;
 		if (min_free_kbytes > 65536)
 			min_free_kbytes = 65536;
 	} else {
@@ -8039,8 +8039,11 @@ int watermark_scale_factor_sysctl_handler(struct ctl_table *table, int write,
 	if (rc)
 		return rc;
 
-	if (write)
+	if (write) {
+		if (watermark_scale_factor < 120)
+			watermark_scale_factor = 120;
 		setup_per_zone_wmarks();
+	}
 
 	return 0;
 }

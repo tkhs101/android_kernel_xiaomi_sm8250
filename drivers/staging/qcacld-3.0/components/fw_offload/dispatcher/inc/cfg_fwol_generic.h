@@ -188,7 +188,7 @@
 		"gLowerBrssiThresh", \
 		6, \
 		36, \
-		26, \
+		30, \
 		CFG_VALUE_OR_DEFAULT, \
 		"Sets Lower threshold for beacon RSSI")
 
@@ -211,7 +211,7 @@
  */
 #define CFG_DTIM_1CHRX_ENABLE CFG_INI_BOOL( \
 		"gDtim1ChRxEnable", \
-		1, \
+		0, \
 		"Enable/Disable DTIM 1Chrx feature")
 
 /*

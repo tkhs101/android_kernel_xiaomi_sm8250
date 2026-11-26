@@ -124,6 +124,17 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "[*] SuSFS kernel code already present."
     fi
 
+    # 2.5 Bake the LineageOS fingerprint paths into sus_path (Chunqiu #2..#8).
+    # Baking them into the kernel keeps the paths hidden on every boot without
+    # any /data/adb configuration; only app uids (>= 10000) are affected, so
+    # init/system_server still see the files they need.
+    SUSFS_HIDE_PATCH="patches/susfs_hide_lineage_paths.patch"
+    if [ -f "fs/susfs.c" ] && ! grep -q "susfs_baked_sus_paths" fs/susfs.c; then
+        echo "[*] Baking sus_path entries for LineageOS fingerprints..."
+        patch -p1 --forward < "$SUSFS_HIDE_PATCH"
+        echo "[+] Baked sus_path entries applied."
+    fi
+
     # 3. Setup NoMount
     if [ ! -d "NoMount" ]; then
         echo "[*] Downloading NoMount setup script..."
@@ -251,6 +262,10 @@ esac
 if [ "$ENABLE_KSU" -eq 1 ]; then
     grep -q "CHUNQIU_HARDEN" KernelSU/kernel/policy/feature.c || {
         echo "[-] KernelSU hardening patch is missing. Aborting."
+        exit 1
+    }
+    grep -q "susfs_baked_sus_paths" fs/susfs.c || {
+        echo "[-] Baked sus_path entries are missing. Aborting."
         exit 1
     }
 fi

@@ -50,6 +50,11 @@ export KBUILD_BUILD_USER="android-build"
 export KBUILD_BUILD_HOST="google.com"
 export KBUILD_BUILD_TIMESTAMP="Tue Sep 22 16:57:36 CEST 2026"
 
+# Declare (empty) LOCALVERSION: scripts/setlocalversion appends a "+" marker
+# when the variable is unset and the tree is not at a clean tagged commit,
+# which would still advertise a locally modified kernel (Chunqiu check #1).
+export LOCALVERSION=""
+
 # ccache Setup
 export CCACHE_DIR="$HOME/.cache/ccache_mikernel"
 export CCACHE_EXEC=$(command -v ccache || true)
@@ -75,17 +80,28 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "==========================================="
 
     # 1. Setup BakaSU
-    echo "[*] Downloading BakaSU setup script..."
+    # Pinned to the revision the v199 release was built from (BakaSU main,
+    # 2026-11-23). Pinning keeps the build reproducible and guarantees that the
+    # hardening patch below still matches the vendored KernelSU layout.
+    KSU_PIN="57b2db6076f439cfd489f14576444e8f0f2f0a25"
+    echo "[*] Downloading BakaSU setup script (${KSU_PIN})..."
     KSU_SETUP_TMP=$(mktemp)
-    if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
+    if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/${KSU_PIN}/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
         echo "[+] BakaSU script retrieved successfully."
-        bash "$KSU_SETUP_TMP" main
+        bash "$KSU_SETUP_TMP" "$KSU_PIN"
         rm -f "$KSU_SETUP_TMP"
 
         # Compatibility adjustments for SuSFS
         if [ -f "KernelSU/kernel/tools/susfs_compat.mk" ]; then
             sed -i '/Please wait susfs update/d' KernelSU/kernel/tools/susfs_compat.mk
         fi
+
+        # 1.5 Harden KernelSU feature defaults (Chunqiu checks #10 / #11).
+        # selinux_hide answers selinuxfs probes out of the pre-KernelSU policy and
+        # adb_root stays off; both are forced at boot, so a manager change or a
+        # /data wipe cannot turn the detections back on.
+        echo "[*] Patching KernelSU feature defaults (selinux_hide=1, adb_root=0)..."
+        python3 tools/harden_ksu.py KernelSU/kernel/policy/feature.c
     else
         echo "[-] Failed to retrieve valid BakaSU setup script!"
         rm -f "$KSU_SETUP_TMP"
@@ -188,6 +204,7 @@ scripts/config --file "${OUT_DIR}/.config" \
     -e ZRAM_WRITEBACK \
     -e MQ_IOSCHED_DEADLINE \
     -e MQ_IOSCHED_KYBER \
+    -d LOCALVERSION_AUTO \
     -d SECURITY_SELINUX_DEVELOP
 
 # ==========================================
@@ -218,6 +235,24 @@ make "${MAKE_OPTS[@]}" Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "[-] Kernel compilation failed: Image not found!"
     exit 1
+fi
+
+# ==========================================
+# Release / hardening assertions
+# ==========================================
+KERNEL_RELEASE=$(cat "${OUT_DIR}/include/config/kernel.release")
+echo "[*] KERNELRELEASE: ${KERNEL_RELEASE}"
+case "${KERNEL_RELEASE}" in
+    *[Dd]irty*|*+*)
+        echo "[-] KERNELRELEASE still advertises a modified (self-built) tree. Aborting."
+        exit 1
+        ;;
+esac
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    grep -q "CHUNQIU_HARDEN" KernelSU/kernel/policy/feature.c || {
+        echo "[-] KernelSU hardening patch is missing. Aborting."
+        exit 1
+    }
 fi
 echo "[+] Kernel compilation successful!"
 

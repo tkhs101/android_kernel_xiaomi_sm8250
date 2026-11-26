@@ -21,6 +21,7 @@ on:
     paths:
       - 'build_kernel.sh'
       - 'patches/**'
+      - 'tools/**'
       - 'arch/arm64/configs/**'
       - 'fs/**'
       - 'include/**'

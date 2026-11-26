@@ -215,7 +215,6 @@ static void loopback_setup(struct net_device *dev)
 {
 	gen_lo_setup(dev, (64 * 1024), &loopback_ethtool_ops, &eth_header_ops,
 		     &loopback_ops, loopback_dev_free);
-	dev->tx_queue_len = 10000;
 }
 
 /* Setup and register the loopback device. */

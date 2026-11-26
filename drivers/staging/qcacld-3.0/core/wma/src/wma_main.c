@@ -2939,7 +2939,6 @@ QDF_STATUS wma_open(struct wlan_objmgr_psoc *psoc,
 		goto err_get_psoc_ref;
 	}
 	wma_handle->psoc = psoc;
-	wma_handle->pdevconfig.cwmenable = 1;
 
 	wma_target_if_open(wma_handle);
 

@@ -136,12 +136,16 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     fi
 
     # 3. Setup NoMount
+    # Pinned: NoMount patches fs/ directly, so an upstream master change would
+    # silently alter the produced kernel. The SHA below is the one the v199-era
+    # builds (and this branch's validated builds) used.
+    NOMOUNT_PIN="6849f00a342b80338fb4398765f75f014dbcd557"
     if [ ! -d "NoMount" ]; then
-        echo "[*] Downloading NoMount setup script..."
+        echo "[*] Downloading NoMount setup script (${NOMOUNT_PIN})..."
         NOMOUNT_SETUP_TMP=$(mktemp)
-        if curl -LSs -o "$NOMOUNT_SETUP_TMP" "https://raw.githubusercontent.com/maxsteeel/nomount/master/kernel/setup.sh" && [ -s "$NOMOUNT_SETUP_TMP" ]; then
+        if curl -LSs -o "$NOMOUNT_SETUP_TMP" "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_PIN}/kernel/setup.sh" && [ -s "$NOMOUNT_SETUP_TMP" ]; then
             echo "[+] NoMount script retrieved successfully."
-            sh "$NOMOUNT_SETUP_TMP" master
+            sh "$NOMOUNT_SETUP_TMP" "$NOMOUNT_PIN"
             rm -f "$NOMOUNT_SETUP_TMP"
         else
             echo "[-] Failed to retrieve valid NoMount setup script!"

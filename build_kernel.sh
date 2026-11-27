@@ -102,6 +102,15 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         # /data wipe cannot turn the detections back on.
         echo "[*] Patching KernelSU feature defaults (selinux_hide=1, adb_root=0)..."
         python3 tools/harden_ksu.py KernelSU/kernel/policy/feature.c
+
+        # Keep the vendored KernelSU checkout clean: its build embeds
+        # "git describe --dirty", which would otherwise advertise the root
+        # manager as vX.Y.Z-<sha>-dirty in the kernel image and in the manager.
+        if [ -d "KernelSU/.git" ] && ! git -C KernelSU diff --quiet; then
+            git -C KernelSU add -A
+            git -C KernelSU -c user.name="kernel-harden" -c user.email="harden@localhost" \
+                commit -q -m "harden: force selinux_hide=1 and adb_root=0"
+        fi
     else
         echo "[-] Failed to retrieve valid BakaSU setup script!"
         rm -f "$KSU_SETUP_TMP"

@@ -8,7 +8,7 @@ set -eo pipefail
 # ==========================================
 if [ -z "$1" ]; then
     echo "[!] Error: No device specified."
-    echo "Usage: $0 <device_name> [ksu] [aosp] [official|custom]"
+    echo "Usage: $0 <device_name> [ksu] [aosp] [official]"
     echo "Example: $0 alioth ksu aosp official"
     exit 1
 fi
@@ -78,42 +78,33 @@ clang --version || { echo "[!] Clang not found at ${TOOLCHAIN_BIN}. Please check
 # Root Solution, SuSFS & NoMount Setup
 # ==========================================
 if [ "$ENABLE_KSU" -eq 1 ]; then
+    # Only the official BakaSU variant is supported and hardened on this branch:
+    # the CustomSU fork is fetched from a moving branch and does not share the
+    # feature layout that tools/harden_ksu.py patches.
     if [ "$KSU_VARIANT" = "custom" ]; then
-        echo "==========================================="
-        echo " [*] Initializing CustomSU (faisalwildanhabibi/BakaSU fork), SuSFS & NoMount Setup"
-        echo "==========================================="
-        echo "[*] Downloading CustomSU setup script..."
-        KSU_SETUP_TMP=$(mktemp)
-        if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/faisalwildanhabibi/BakaSU/custom/main/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
-            echo "[+] CustomSU script retrieved successfully."
-            KSU_REPO="https://github.com/faisalwildanhabibi/BakaSU" bash "$KSU_SETUP_TMP" custom/main
-            rm -f "$KSU_SETUP_TMP"
-        else
-            echo "[-] Failed to retrieve valid CustomSU setup script!"
-            rm -f "$KSU_SETUP_TMP"
-            exit 1
-        fi
-        KSU_TAG="CustomSU-SuSFS-NoMount-WG"
-    else
-        echo "==========================================="
-        echo " [*] Initializing Official BakaSU (Baka-SU/BakaSU), SuSFS & NoMount Setup"
-        echo "==========================================="
-        # Pinned to the revision the v199 release was built from (BakaSU main,
-        # 2026-11-23), so the hardening patch below keeps matching the layout.
-        KSU_PIN="57b2db6076f439cfd489f14576444e8f0f2f0a25"
-        echo "[*] Downloading BakaSU setup script (${KSU_PIN})..."
-        KSU_SETUP_TMP=$(mktemp)
-        if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/${KSU_PIN}/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
-            echo "[+] BakaSU script retrieved successfully."
-            bash "$KSU_SETUP_TMP" "$KSU_PIN"
-            rm -f "$KSU_SETUP_TMP"
-        else
-            echo "[-] Failed to retrieve valid BakaSU setup script!"
-            rm -f "$KSU_SETUP_TMP"
-            exit 1
-        fi
-        KSU_TAG="BakaSU-SuSFS-NoMount-WG"
+        echo "[-] This branch only supports the official BakaSU variant."
+        echo "[-] Drop the 'custom' argument (official is the default)."
+        exit 1
     fi
+
+    echo "==========================================="
+    echo " [*] Initializing Official BakaSU (Baka-SU/BakaSU), SuSFS & NoMount Setup"
+    echo "==========================================="
+    # Pinned to the revision the v199 release was built from (BakaSU main,
+    # 2026-11-23), so the hardening patch below keeps matching the layout.
+    KSU_PIN="57b2db6076f439cfd489f14576444e8f0f2f0a25"
+    echo "[*] Downloading BakaSU setup script (${KSU_PIN})..."
+    KSU_SETUP_TMP=$(mktemp)
+    if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/${KSU_PIN}/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
+        echo "[+] BakaSU script retrieved successfully."
+        bash "$KSU_SETUP_TMP" "$KSU_PIN"
+        rm -f "$KSU_SETUP_TMP"
+    else
+        echo "[-] Failed to retrieve valid BakaSU setup script!"
+        rm -f "$KSU_SETUP_TMP"
+        exit 1
+    fi
+    KSU_TAG="BakaSU-SuSFS-NoMount-WG"
 
     # Compatibility adjustments for SuSFS
     if [ -f "KernelSU/kernel/tools/susfs_compat.mk" ]; then
@@ -265,10 +256,6 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         -e KSU \
         -e KSU_SUSFS \
         -e NOMOUNT
-    if [ "$KSU_VARIANT" = "custom" ]; then
-        scripts/config --file "${OUT_DIR}/.config" \
-            -d KSU_PERSISTENT_ADB
-    fi
 fi
 
 make "${MAKE_OPTS[@]}" olddefconfig
@@ -365,11 +352,7 @@ sed -i "s/device.name1=.*/device.name1=${DEVICE_NAME}/" anykernel.sh
 
 KSU_TAG="NoKSU"
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    if [ "$KSU_VARIANT" = "custom" ]; then
-        KSU_TAG="CustomSU-SuSFS-NoMount-WG"
-    else
-        KSU_TAG="BakaSU-SuSFS-NoMount-WG"
-    fi
+    KSU_TAG="BakaSU-SuSFS-NoMount-WG"
 fi
 
 ZIP_NAME="Kernel-${DEVICE_NAME}-${TARGET_OS}-${KSU_TAG}-$(date +%Y%m%d_%H%M%S)"

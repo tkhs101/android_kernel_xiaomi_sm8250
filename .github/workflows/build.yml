@@ -31,6 +31,9 @@ on:
       - 'security/**'
       - '.github/workflows/build.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-kernel:
     name: "Build Kernel (alioth)"
@@ -120,3 +123,36 @@ jobs:
           Kernel-*.zip
           SHA256SUMS
         compression-level: 0
+  publish-release:
+    name: "Publish Flashable Release"
+    needs: build-kernel
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: "Download Build Artifacts"
+      uses: actions/download-artifact@v4
+      with:
+        path: release_assets
+        merge-multiple: true
+
+    - name: "Create Release with Directly Flashable ZIP"
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}-alioth
+        name: "Kernel alioth #${{ github.run_number }}"
+        body: |
+          ### POCO F3 (alioth) flashable kernel
+
+          - Branch: `${{ github.ref_name }}`
+          - Commit: `${{ github.sha }}`
+          - Run: [#${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - Hardening: clean release string (no `-dirty`), forced `selinux_hide=1` / `adb_root=0`, LineageOS fingerprints hidden through SUSFS `sus_path`.
+
+          Download the `Kernel-*.zip` below and flash it directly with Recovery or a kernel flasher (AnyKernel3). `SHA256SUMS` is attached for verification.
+        files: |
+          release_assets/Kernel-*.zip
+          release_assets/SHA256SUMS
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

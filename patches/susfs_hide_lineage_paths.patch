@@ -1,0 +1,81 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+index 7ec01d5..84b0840 100644
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -265,6 +265,48 @@ static DEFINE_MUTEX(susfs_mutex_lock_sus_path);
+ static LIST_HEAD(LH_SUS_PATH_LOOP);
+ const struct qstr susfs_fake_qstr_name = QSTR_INIT("..5.u.S", 7); // used to re-test the dcache lookup, make sure you don't have file named like this!!
+ 
++/*
++ * Baked-in sus_path entries.
++ *
++ * Chunqiu flags the LineageOS fingerprints of this build (checks #2..#8).
++ * Keeping the list inside the kernel hides these paths on every boot without
++ * any /data/adb configuration that a wipe could remove. Only processes with
++ * uid >= 10000 are affected, so init/system_server still see these files.
++ */
++static const char *const susfs_baked_sus_paths[] = {
++	"/product/etc/vintf/compatibility_matrix.lineage.xml",
++	"/vendor/etc/vintf/manifest/vendor.lineage.health-service.default.xml",
++	"/vendor/etc/vintf/manifest/vendor.lineage.livedisplay-service.sdm-pa.xml",
++	"/vendor/etc/selinux/vendor_hwservice_contexts",
++	"/vendor/etc/selinux/vendor_sepolicy.cil",
++	"/vendor/etc/selinux/vendor_file_contexts",
++	"/system_ext/etc/permissions/privapp-permissions-dspvolume.xml",
++	"/system_ext/etc/permissions/privapp_whitelist_org.lineageos.settings.xml",
++	"/system_ext/etc/init/init.lineage-system_ext.rc",
++	"/product/etc/sysconfig/preinstalled-packages-org.lineageos.aperture.xml",
++	"/product/etc/sysconfig/initial-package-stopped-states-org.lineageos.aperture.xml",
++};
++
++static void susfs_bake_sus_paths(void)
++{
++	struct st_susfs_sus_path_list *node;
++	size_t i;
++
++	for (i = 0; i < ARRAY_SIZE(susfs_baked_sus_paths); i++) {
++		node = kzalloc(sizeof(*node), GFP_KERNEL);
++		if (!node) {
++			SUSFS_LOGE("no memory for baked sus_path '%s'\n", susfs_baked_sus_paths[i]);
++			return;
++		}
++		strscpy(node->info.target_pathname, susfs_baked_sus_paths[i], SUSFS_MAX_LEN_PATHNAME - 1);
++		strscpy(node->target_pathname, susfs_baked_sus_paths[i], SUSFS_MAX_LEN_PATHNAME - 1);
++		INIT_LIST_HEAD(&node->list);
++		mutex_lock(&susfs_mutex_lock_sus_path);
++		list_add_tail_rcu(&node->list, &LH_SUS_PATH_LOOP);
++		mutex_unlock(&susfs_mutex_lock_sus_path);
++	}
++	SUSFS_LOGI("baked %zu sus_path entries\n", ARRAY_SIZE(susfs_baked_sus_paths));
++}
+ void susfs_add_sus_path(void __user **user_info) {
+ 	struct st_susfs_sus_path info = {0};
+ 	struct path path;
+@@ -392,6 +434,15 @@ static void susfs_run_sus_path_loop(void) {
+ 	revert_creds(saved);
+ }
+ 
++static struct delayed_work susfs_baked_paths_dwork;
++
++static void susfs_baked_paths_work(struct work_struct *work)
++{
++	if (!ksu_cred)
++		return;
++	SUSFS_LOGI("re-applying baked sus_path entries\n");
++	susfs_run_sus_path_loop();
++}
+ 
+ bool susfs_is_uid_allowed_for_sus_path(uid_t uid);
+ 
+@@ -2634,6 +2685,11 @@ static void susfs_run_extra_works(struct work_struct *work) {
+ void susfs_init(void) {\
+ 	SUSFS_LOGI("Initializing susfs_extra_works\n");
+ 	INIT_WORK(&susfs_extra_works, susfs_run_extra_works);
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++	susfs_bake_sus_paths();
++	INIT_DELAYED_WORK(&susfs_baked_paths_dwork, susfs_baked_paths_work);
++	schedule_delayed_work(&susfs_baked_paths_dwork, 25 * HZ);
++#endif
+ 	SUSFS_LOGI("susfs is initialized! version: " SUSFS_VERSION " \n");
+ }
+ 

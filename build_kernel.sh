@@ -53,6 +53,11 @@ export KBUILD_BUILD_USER="android-build"
 export KBUILD_BUILD_HOST="google.com"
 export KBUILD_BUILD_TIMESTAMP="Tue Sep 22 16:57:36 CEST 2026"
 
+# Declare (empty) LOCALVERSION: scripts/setlocalversion appends a "+" marker
+# when the variable is unset and the tree is not at a clean tagged commit,
+# which would still advertise a locally modified kernel (Chunqiu check #1).
+export LOCALVERSION=""
+
 # ccache Setup
 export CCACHE_DIR="$HOME/.cache/ccache_mikernel"
 export CCACHE_EXEC=$(command -v ccache || true)
@@ -93,11 +98,14 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "==========================================="
         echo " [*] Initializing Official BakaSU (Baka-SU/BakaSU), SuSFS & NoMount Setup"
         echo "==========================================="
-        echo "[*] Downloading BakaSU setup script..."
+        # Pinned to the revision the v199 release was built from (BakaSU main,
+        # 2026-11-23), so the hardening patch below keeps matching the layout.
+        KSU_PIN="57b2db6076f439cfd489f14576444e8f0f2f0a25"
+        echo "[*] Downloading BakaSU setup script (${KSU_PIN})..."
         KSU_SETUP_TMP=$(mktemp)
-        if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
+        if curl -LSs -o "$KSU_SETUP_TMP" "https://raw.githubusercontent.com/Baka-SU/BakaSU/${KSU_PIN}/kernel/setup.sh" && [ -s "$KSU_SETUP_TMP" ]; then
             echo "[+] BakaSU script retrieved successfully."
-            bash "$KSU_SETUP_TMP" main
+            bash "$KSU_SETUP_TMP" "$KSU_PIN"
             rm -f "$KSU_SETUP_TMP"
         else
             echo "[-] Failed to retrieve valid BakaSU setup script!"
@@ -117,6 +125,20 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         sed -i '/vfs_hide/d' KernelSU/kernel/core/init.c
     fi
 
+    # Harden KernelSU feature defaults (Chunqiu checks #10 / #11).
+    # selinux_hide answers selinuxfs probes out of the pre-KernelSU policy and
+    # adb_root stays off; both are forced at boot, so a manager change or a
+    # /data wipe cannot turn the detections back on.
+    echo "[*] Patching KernelSU feature defaults (selinux_hide=1, adb_root=0)..."
+    python3 tools/harden_ksu.py KernelSU/kernel/policy/feature.c
+
+    # Keep the vendored checkout clean: its build embeds "git describe --dirty".
+    if [ -d "KernelSU/.git" ] && ! git -C KernelSU diff --quiet; then
+        git -C KernelSU add -A
+        git -C KernelSU -c user.name="kernel-harden" -c user.email="harden@localhost" \
+            commit -q -m "harden: force selinux_hide=1 and adb_root=0"
+    fi
+
     # 2. Apply SuSFS 4.19 Kernel Patch
     if [ ! -f "fs/susfs.c" ]; then
         echo "[*] Initializing SuSFS 4.19 Kernel Patch..."
@@ -133,13 +155,24 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "[*] SuSFS kernel code already present."
     fi
 
+    # Bake the LineageOS fingerprint paths into sus_path (Chunqiu #2..#8).
+    SUSFS_HIDE_PATCH="patches/susfs_hide_lineage_paths.patch"
+    if [ -f "fs/susfs.c" ] && ! grep -q "susfs_baked_sus_paths" fs/susfs.c; then
+        echo "[*] Baking sus_path entries for LineageOS fingerprints..."
+        patch -p1 --forward < "$SUSFS_HIDE_PATCH"
+        echo "[+] Baked sus_path entries applied."
+    fi
+
     # 3. Setup NoMount
+    # Pinned: NoMount patches fs/ directly, so an upstream master change would
+    # silently alter the produced kernel.
+    NOMOUNT_PIN="6849f00a342b80338fb4398765f75f014dbcd557"
     if [ ! -d "NoMount" ]; then
-        echo "[*] Downloading NoMount setup script..."
+        echo "[*] Downloading NoMount setup script (${NOMOUNT_PIN})..."
         NOMOUNT_SETUP_TMP=$(mktemp)
-        if curl -LSs -o "$NOMOUNT_SETUP_TMP" "https://raw.githubusercontent.com/maxsteeel/nomount/master/kernel/setup.sh" && [ -s "$NOMOUNT_SETUP_TMP" ]; then
+        if curl -LSs -o "$NOMOUNT_SETUP_TMP" "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_PIN}/kernel/setup.sh" && [ -s "$NOMOUNT_SETUP_TMP" ]; then
             echo "[+] NoMount script retrieved successfully."
-            sh "$NOMOUNT_SETUP_TMP" master
+            sh "$NOMOUNT_SETUP_TMP" "$NOMOUNT_PIN"
             rm -f "$NOMOUNT_SETUP_TMP"
         else
             echo "[-] Failed to retrieve valid NoMount setup script!"
@@ -213,6 +246,7 @@ scripts/config --file "${OUT_DIR}/.config" \
     -e ZRAM_WRITEBACK \
     -e MQ_IOSCHED_DEADLINE \
     -e MQ_IOSCHED_KYBER \
+    -d LOCALVERSION_AUTO \
     -d SECURITY_SELINUX_DEVELOP
 
 # ==========================================
@@ -247,6 +281,28 @@ make "${MAKE_OPTS[@]}" Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "[-] Kernel compilation failed: Image not found!"
     exit 1
+fi
+
+# ==========================================
+# Release / hardening assertions
+# ==========================================
+KERNEL_RELEASE=$(cat "${OUT_DIR}/include/config/kernel.release")
+echo "[*] KERNELRELEASE: ${KERNEL_RELEASE}"
+case "${KERNEL_RELEASE}" in
+    *[Dd]irty*|*+*)
+        echo "[-] KERNELRELEASE still advertises a modified (self-built) tree. Aborting."
+        exit 1
+        ;;
+esac
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    grep -q "CHUNQIU_HARDEN" KernelSU/kernel/policy/feature.c || {
+        echo "[-] KernelSU hardening patch is missing. Aborting."
+        exit 1
+    }
+    grep -q "susfs_baked_sus_paths" fs/susfs.c || {
+        echo "[-] Baked sus_path entries are missing. Aborting."
+        exit 1
+    }
 fi
 echo "[+] Kernel compilation successful!"
 

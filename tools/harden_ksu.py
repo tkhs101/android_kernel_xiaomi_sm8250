@@ -61,15 +61,22 @@ HELPER = """
  * The values take the force_feature path, so they are applied at
  * second_stage (after the sepolicy backup exists) and retried at
  * post-fs-data.
+ *
+ * apply is false when the desired value already equals the compiled-in
+ * default: re-applying it is pointless, and the ADB Root setter would run
+ * static_key_disable() on a disabled key (WARN_ON_ONCE in
+ * __static_key_slow_dec()). The forced mask alone still makes ksud skip
+ * the feature, so the manager cannot enable it either.
  */
-static void __init ksu_harden_feature_default(u32 id, u64 value)
+static void __init ksu_harden_feature_default(u32 id, u64 value, bool apply)
 {
     if (id >= KSU_FEATURE_MAX || test_bit(id, forced_mask))
         return;
 
     forced_values[id] = value;
     set_bit(id, forced_mask);
-    set_bit(id, forced_pending);
+    if (apply)
+        set_bit(id, forced_pending);
 
     pr_info("feature: hardened default %s=%llu\\n",
             feature_names[id] ? feature_names[id] : "?", (unsigned long long)value);
@@ -78,8 +85,9 @@ static void __init ksu_harden_feature_default(u32 id, u64 value)
 
 CALLS = """
     /* CHUNQIU_HARDEN: hide KernelSU SELinux additions, never escape adbd. */
-    ksu_harden_feature_default(KSU_FEATURE_SELINUX_HIDE, 1);
-    ksu_harden_feature_default(KSU_FEATURE_ADB_ROOT, 0);
+    ksu_harden_feature_default(KSU_FEATURE_SELINUX_HIDE, 1, true);
+    /* adb_root already defaults to off, only pin it against the manager. */
+    ksu_harden_feature_default(KSU_FEATURE_ADB_ROOT, 0, false);
 """
 
 REQUIRED_TOKENS = (
